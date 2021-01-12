@@ -1,0 +1,13 @@
+name = "FactoryRendering"
+uuid = "2c1b03b8-aebe-4ec7-8d8d-27e88d52cb0f"
+authors = ["Kyle Brown <kylejbrown17@gmail.com> and contributors"]
+version = "0.1.0"
+
+[compat]
+julia = "1.1"
+
+[extras]
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+
+[targets]
+test = ["Test"]
