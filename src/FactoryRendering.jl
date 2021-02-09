@@ -13,21 +13,34 @@ export
     BirdsEyeProjection,
     construct_unit_box,
     EntityRenderModel,
-    get_render_layer
+    RenderLayerCache,
+    RenderCache,
+    get_render_layer,
+    update_layer_cache!,
+    default_vtx_color,
+    default_entity_radius,
+    default_robot_radius,
+    default_object_radius,
+    default_entity_shape,
+    default_robot_color,
+    default_robot_shape,
+    default_object_color,
+    get_aspect_ratio
 
-const DEFAULT_VTX_COLOR = colorant"LightGray"
+global DEFAULT_VTX_COLOR = colorant"LightGray"
+global DEFAULT_ENTITY_RADIUS = 0.5
+global DEFAULT_ROBOT_RADIUS = 0.5
+global DEFAULT_OBJECT_RADIUS = 0.25
+global DEFAULT_ROBOT_COLOR = RGB(0.1,0.5,0.9)
+global DEFAULT_OBJECT_COLOR = colorant"black"
 default_vtx_color() = DEFAULT_VTX_COLOR
-const DEFAULT_ENTITY_RADIUS = 0.5
-const DEFAULT_ROBOT_RADIUS = 0.5
-const DEFAULT_OBJECT_RADIUS = 0.25
 default_entity_radius() = DEFAULT_ENTITY_RADIUS
 default_robot_radius() = DEFAULT_ROBOT_RADIUS
 default_object_radius() = DEFAULT_OBJECT_RADIUS
-default_entity_shape() = Circle(Point(0.0,0.0),default_entity_radius())
-const DEFAULT_ROBOT_COLOR = RGB(0.1,0.5,0.9)
-const DEFAULT_OBJECT_COLOR = colorant"black"
 default_robot_color() = DEFAULT_ROBOT_COLOR
 default_object_color() = DEFAULT_OBJECT_COLOR
+default_entity_shape() = Circle(Point(0.0,0.0),default_entity_radius())
+default_robot_shape() = Circle(Point(0.0,0.0),default_robot_radius())
 get_aspect_ratio() = Compose.default_graphic_height / Compose.default_graphic_width
 
 abstract type RenderProjection end
@@ -57,6 +70,7 @@ Compose.circle(c::Circle)               = Compose.circle(c.center[1],c.center[2]
 Compose.ellipse(e::AxisAlignedEllipse) = Compose.ellipse(e.center[1],e.center[2],e.rx,e.ry)
 Compose.polygon(n::GeometryBasics.Ngon) = Compose.polygon(Vector(map(NTuple{2,Float64}, coordinates(n))))
 convert_to_compose_form(e::Circle)              = Compose.circle(e)
+convert_to_compose_form(e::Rect2D)              = Compose.rectangle(e.origin..., e.widths...)
 convert_to_compose_form(e::AxisAlignedEllipse)  = Compose.ellipse(e)
 convert_to_compose_form(e::GeometryBasics.Ngon) = Compose.polygon(e)
 Base.:(+)(c::Union{HyperSphere,Rect2D,GeometryBasics.Ngon,AxisAlignedEllipse},v::Vector) = map(p->c+p,v)
@@ -88,7 +102,7 @@ function (proj::RenderProjection)(r::G) where {N,M,G<:GeometryBasics.Ngon{N,Floa
 end
 function (proj::OrthographicProjection)(r::Rect2D)
     pts = map(Point2,collect(coordinates(r)))
-    proj(GeometryBasics.Ngon(SVector(pts[1],pts[2],pts[3],pts[4])))
+    proj(GeometryBasics.Ngon(SVector(pts[1],pts[2],pts[4],pts[3])))
 end
 
 function bounding_hyperrect(vtxs::Vector{Point{N,Float64}},buffer=zero(Vec{N,Float64})) where {N}
@@ -119,28 +133,28 @@ function construct_unit_box(xl,yl,xh,yh,aspect=get_aspect_ratio())
     UnitBox(cx-dx/2,cy-dy/2,dx,dy)
 end
 
-"""
-    EntityConfiguration{N}
+# """
+#     EntityConfiguration{N}
 
-3D Robot or object configuration.
-"""
-@with_kw mutable struct EntityConfiguration
-    pos::Point{3,Float64}   = zero(Point{3,Float64})
-    theta::Float64          = 0.0
-end
-struct RenderPrimitive{G,C}
-    geom::G
-    color::C
-end
-const RenderStack{N} = NTuple{N,RenderPrimitive} 
-function circle_entity_render_stack(radius,color)
-    RenderStack{1}([
-        # RenderPrimitive(Line(Point2(0.0,0.0),Point2(0.0,0.0)),color),
-        RenderPrimitive(Circle(Point2(0.0,0.0),radius),color),
-    ])
-end
-circle_robot_render_stack(radius=default_robot_radius(),color=default_robot_color()) = circle_entity_render_stack(radius,color)
-circle_object_render_stack(radius=default_object_radius(),color=default_object_color()) = circle_entity_render_stack(radius,color)
+# 3D Robot or object configuration.
+# """
+# @with_kw mutable struct EntityConfiguration
+#     pos::Point{3,Float64}   = zero(Point{3,Float64})
+#     theta::Float64          = 0.0
+# end
+# struct RenderPrimitive{G,C}
+#     geom::G
+#     color::C
+# end
+# const RenderStack{N} = NTuple{N,RenderPrimitive} 
+# function circle_entity_render_stack(radius,color)
+#     RenderStack{1}([
+#         # RenderPrimitive(Line(Point2(0.0,0.0),Point2(0.0,0.0)),color),
+#         RenderPrimitive(Circle(Point2(0.0,0.0),radius),color),
+#     ])
+# end
+# circle_robot_render_stack(radius=default_robot_radius(),color=default_robot_color()) = circle_entity_render_stack(radius,color)
+# circle_object_render_stack(radius=default_object_radius(),color=default_object_color()) = circle_entity_render_stack(radius,color)
 
 # """
 #     struct GridWorldModel{N}
@@ -166,11 +180,16 @@ For rendering multiple entities. Fields:
 *shapes
 *colors (can be be a vector of colors or a single color)
 """
-@with_kw mutable struct EntityRenderModel{N,G,C}
-    configs::Vector{Point{N,Float64}}   = Vector{Point{N,Float64}}()
-    shapes::G                           = map(c->default_entity_shape(), configs)
-    colors::C                           = map(v->default_robot_color(),configs)
-    label_entities::Bool                = false
+@with_kw mutable struct EntityRenderModel
+    configs     = Vector{Point{3,Float64}}()
+    shapes      = map(c->default_entity_shape(), configs)
+    colors      = map(v->default_robot_color(),configs)
+    # label_entities::Bool                = false
+end
+struct StaticEntityRenderModel{V,G,C}
+    configs::V
+    shapes::G
+    colors::C
 end
 
 function get_render_layer(m::EntityRenderModel,proj=BirdsEyeProjection())
@@ -182,11 +201,24 @@ function get_render_layer(m::EntityRenderModel,proj=BirdsEyeProjection())
         tformed_shapes = shapes + vtxs
     end
     forms = map(convert_to_compose_form, tformed_shapes)
-    return (context(), forms..., fill(m.colors))
+    return Compose.compose(context(), forms..., fill(m.colors))
 end
 function construct_unit_box(m::EntityRenderModel,proj=BirdsEyeProjection(),buffer=zeros(2))
-    vtxs = map(proj, m.configs)
+    vtxs = proj(m.configs)
     construct_unit_box(bounding_hyperrect(vtxs,buffer))
+end
+
+@with_kw mutable struct RenderLayerCache{E}
+    model::E        = EntityRenderModel()
+    layer::Context  = context()
+end
+function update_layer_cache!(c::RenderLayerCache,args...)
+    c.layer = get_render_layer(c.model,args...)
+    return c
+end
+
+struct RenderCache{T}
+    caches::T
 end
 
 end

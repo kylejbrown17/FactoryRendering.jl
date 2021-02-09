@@ -4,7 +4,6 @@ using Colors
 using GeometryBasics
 using StaticArrays
 using FactoryRendering
-using CoordinateTransformations
 
 
 # rendering practice
@@ -34,7 +33,6 @@ robot_model = FactoryRendering.EntityRenderModel(
 o_vtxs=vtxs[[28,137,41,267]]
 object_model = FactoryRendering.EntityRenderModel(
     configs=o_vtxs,
-    # shapes = map(v->Circle(Point(0.0,0.0),0.15),o_vtxs),
     shapes = Circle(Point(0.0,0.0),0.15),
     colors = HSVA(0,0,0,0.9)
 )
@@ -46,7 +44,7 @@ proj = FactoryRendering.OrthographicProjection(theta,azimuth)
 
 unit_box = FactoryRendering.construct_unit_box(floor_model,proj,ones(2))
 Compose.compose(context(units=unit_box),
-    FactoryRendering.get_render_layer(object_model,proj),
-    FactoryRendering.get_render_layer(robot_model,proj),
-    FactoryRendering.get_render_layer(floor_model,proj),
+    get_render_layer(object_model,proj),
+    get_render_layer(robot_model,proj),
+    get_render_layer(floor_model,proj),
     )
