@@ -100,6 +100,9 @@ end
 function (proj::RenderProjection)(r::G) where {N,M,G<:GeometryBasics.Ngon{N,Float64,M,Point{N,Float64}}}
     GeometryBasics.Ngon(SVector{M,Point2{Float64}}(map(proj,r.points)...))
 end
+function (proj::OrthographicProjection)(v::Vector{Point{N,Float64}}) where {N}
+    map(proj,v)
+end
 function (proj::OrthographicProjection)(r::Rect2D)
     pts = map(Point2,collect(coordinates(r)))
     proj(GeometryBasics.Ngon(SVector(pts[1],pts[2],pts[4],pts[3])))
@@ -201,7 +204,12 @@ function get_render_layer(m::EntityRenderModel,proj=BirdsEyeProjection())
         tformed_shapes = shapes + vtxs
     end
     forms = map(convert_to_compose_form, tformed_shapes)
-    return Compose.compose(context(), forms..., fill(m.colors))
+    if isa(m.colors, Vector)
+        colors = m.colors
+    else
+        colors = map(m.colors,1:length(vtxs))
+    end
+    return Compose.compose(context(), [(context(),form,fill(c)) for (form,c) in zip(forms,colors)]...)
 end
 function construct_unit_box(m::EntityRenderModel,proj=BirdsEyeProjection(),buffer=zeros(2))
     vtxs = proj(m.configs)
@@ -212,6 +220,26 @@ end
     model::E        = EntityRenderModel()
     layer::Context  = context()
 end
+
+export PathRenderModel
+
+default_path_width() = 0.1
+@with_kw mutable struct PathRenderModel
+    paths       = Vector{Vector{Point{3,Float64}}}()
+    thicknesses = map(c->default_path_width(), paths)
+    colors      = map(v->default_robot_color(),paths)
+end
+function get_render_layer(m::PathRenderModel,proj=BirdsEyeProjection())
+    paths = map(proj,m.paths)
+    forms = [Compose.compose(context(),
+        Compose.line(map(pt->(pt[1],pt[2]),path)),
+        stroke(c),
+        linewidth(t),
+        ) for (path,c,t) in zip(paths,m.colors,m.thicknesses)]
+    
+    return Compose.compose(context(), forms..., stroke(m.colors))
+end
+
 function update_layer_cache!(c::RenderLayerCache,args...)
     c.layer = get_render_layer(c.model,args...)
     return c
