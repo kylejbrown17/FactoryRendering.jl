@@ -7,6 +7,7 @@ using StaticArrays
 using Parameters
 using Compose
 using Colors
+using GraphUtils
 
 export
     OrthographicProjection,
@@ -33,12 +34,83 @@ global DEFAULT_ROBOT_RADIUS = 0.5
 global DEFAULT_OBJECT_RADIUS = 0.25
 global DEFAULT_ROBOT_COLOR = RGB(0.1,0.5,0.9)
 global DEFAULT_OBJECT_COLOR = colorant"black"
-default_vtx_color() = DEFAULT_VTX_COLOR
+global DEFAULT_GOAL_COLOR = RGB(0.0,1.0,0.0)
+global DEFAULT_GOAL_RADIUS = 0.3
+
+abstract type RenderParam end
+struct EntityRadius <: RenderParam end
+_default_val(::Type{EntityRadius}) = DEFAULT_ENTITY_RADIUS
+struct EntityColor <: RenderParam end
+_default_val(::Type{EntityColor}) = DEFAULT_ROBOT_COLOR
+struct EntityLabelScale <: RenderParam end
+_default_val(::Type{EntityLabelScale}) = 0.7
+
+global DEFAULT_RENDER_PARAMS = Dict()
+function get_render_param(k,key_list...;default=nothing)
+    GraphUtils.nested_default_dict_get(DEFAULT_RENDER_PARAMS,k,key_list...;default=default)
+end
+function set_render_param!(k,args...)
+    global DEFAULT_RENDER_PARAMS
+    GraphUtils.nested_default_dict_set!(DEFAULT_RENDER_PARAMS,k,args...)
+end
+set_render_param!(:Color,       "grey")
+set_render_param!(:TextColor,   "black")
+set_render_param!(:ShapeFunc,   (c,r)->Compose.circle(c[1],c[2],r))
+set_render_param!(:Radius,      0.45)
+set_render_param!(:LabelScale,  0.7)
+set_render_param!(:Color,         :Robot,       RGB(0.1,0.5,0.9))
+set_render_param!(:Radius,        :Robot,       0.45)
+set_render_param!(:LabelScale,    :Robot,       0.7)
+set_render_param!(:Color,         :Object,      RGB(1.0,0.5,0.2))
+set_render_param!(:Radius,        :Object,      0.35)
+set_render_param!(:LabelScale,    :Object,      0.7)
+set_render_param!(:ShapeFunc,     :Vtx,         (c,r)->Compose.rectangle(c[1]-r,c[2]-r,2*r,2*r))
+set_render_param!(:Color,         :Vtx,         colorant"LightGray")
+set_render_param!(:Radius,        :Vtx,         0.45)
+set_render_param!(:LabelScale,    :Vtx,         0.7)
+set_render_param!(:ShapeFunc,     :Goal,        (c,r)->Compose.rectangle(c[1]-r,c[2]-r,2*r,2*r))
+set_render_param!(:Color,         :Goal,        RGB(0.0,1.0,0.0))
+set_render_param!(:Radius,        :Goal,        0.35)
+set_render_param!(:LabelScale,    :Goal,        0.7)
+
+default_vtx_color()     = DEFAULT_VTX_COLOR
+set_default_vtx_color() = DEFAULT_VTX_COLOR
 default_entity_radius() = DEFAULT_ENTITY_RADIUS
-default_robot_radius() = DEFAULT_ROBOT_RADIUS
+default_robot_radius()  = DEFAULT_ROBOT_RADIUS
 default_object_radius() = DEFAULT_OBJECT_RADIUS
-default_robot_color() = DEFAULT_ROBOT_COLOR
-default_object_color() = DEFAULT_OBJECT_COLOR
+default_robot_color()   = DEFAULT_ROBOT_COLOR
+default_object_color()  = DEFAULT_OBJECT_COLOR
+default_goal_color()    = DEFAULT_GOAL_COLOR
+default_goal_radius()   = DEFAULT_GOAL_RADIUS
+
+function set_default_vtx_color!(val)     
+    global DEFAULT_VTX_COLOR=val 
+end
+function set_set_default_vtx_color!(val) 
+    global DEFAULT_VTX_COLOR=val 
+end
+function set_default_entity_radius!(val) 
+    global DEFAULT_ENTITY_RADIUS    =val 
+end
+function set_default_robot_radius!(val)  
+    global DEFAULT_ROBOT_RADIUS=val 
+end
+function set_default_object_radius!(val) 
+    global DEFAULT_OBJECT_RADIUS=val 
+end
+function set_default_robot_color!(val)   
+    global DEFAULT_ROBOT_COLOR=val 
+end
+function set_default_object_color!(val)  
+    global DEFAULT_OBJECT_COLOR=val 
+end
+function set_default_goal_color!(val)
+    global DEFAULT_GOAL_COLOR = val
+end
+function set_default_goal_radius!(val)
+    global DEFAULT_GOAL_RADIUS = val
+end
+
 default_entity_shape() = Circle(Point(0.0,0.0),default_entity_radius())
 default_robot_shape() = Circle(Point(0.0,0.0),default_robot_radius())
 get_aspect_ratio() = Compose.default_graphic_height / Compose.default_graphic_width
@@ -188,6 +260,8 @@ For rendering multiple entities. Fields:
     shapes      = map(c->default_entity_shape(), configs)
     colors      = map(v->default_robot_color(),configs)
     # label_entities::Bool                = false
+    # labels      = map(v->"",configs)
+    # show_labels = false
 end
 struct StaticEntityRenderModel{V,G,C}
     configs::V
@@ -207,7 +281,7 @@ function get_render_layer(m::EntityRenderModel,proj=BirdsEyeProjection())
     if isa(m.colors, Vector)
         colors = m.colors
     else
-        colors = map(m.colors,1:length(vtxs))
+        colors = map(i->m.colors,1:length(vtxs))
     end
     return Compose.compose(context(), [(context(),form,fill(c)) for (form,c) in zip(forms,colors)]...)
 end
@@ -248,5 +322,185 @@ end
 struct RenderCache{T}
     caches::T
 end
+
+function draw_entity(keylist=[];
+        label="",
+        label_offset=[0.0,0.0],
+        color=get_render_param(:Color,keylist...),
+        text_color=get_render_param(:TextColor,keylist...),
+        label_scale=get_render_param(:LabelScale,keylist...),
+        r=get_render_param(:Radius,keylist...),
+        shape_func=get_render_param(:ShapeFunc,keylist...),
+        t=0.0, # linewidth
+    )
+    x = 0.5
+    y = 0.5
+    xl = label_offset[1]+x
+    yl = label_offset[2]+y
+    c = (x,y)
+
+    Compose.compose(context(),
+        (context(),
+            Compose.text(xl, yl, label, hcenter, vcenter), 
+            Compose.fill(text_color), 
+            fontsize(label_scale*min(w,h))
+            ),
+        (context(),
+            shape_func(c,r),
+            fill(color), 
+            Compose.linewidth(t*w)
+            ),
+        )
+end
+draw_tile(;kwargs...) = draw_entity([:Vtx];kwargs...)
+draw_robot(;kwargs...) = draw_entity([:Robot];kwargs...)
+draw_object(;kwargs...) = draw_entity([:Object];kwargs...)
+draw_goal(;kwargs...) = draw_entity([:Goal];kwargs...)
+# function draw_tile(;
+#         color=get_render_param(:Color,:Vtx;default=default_vtx_color()),
+#         label="",
+#         label_offset=[0.0,0.0],
+#         text_color=RGB(0.0,0.0,0.0),
+#         label_scale=get_render_param(:LabelScale,:Vtx;default=default_vtx_color()),
+#         r=0.45,
+#         t=0.5-r,
+#     )
+#     if t < 0
+#         @warn "t = $t. Should it be positive?"
+#     end
+#     x = 0.5
+#     y = 0.5
+#     xl = label_offset[1]+x
+#     yl = label_offset[2]+y
+
+#     Compose.compose(context(),
+#         (context(),
+#             Compose.text(xl, yl, label, hcenter, vcenter), 
+#             Compose.fill(text_color), 
+#             fontsize(label_scale*min(w,h))
+#             ),
+#         (context(),
+#             Compose.rectangle(t,t,1-2*t,1-2*t),
+#             fill(color), 
+#             Compose.linewidth(t*w)
+#             ),
+#         )
+# end
+# function draw_robot(;
+#         color=default_robot_color(),
+#         stroke_color=color,
+#         label="",
+#         label_offset=[0.0,0.0],
+#         text_color=RGB(0.0,0.0,0.0),
+#         label_scale=0.7,
+#         r=default_robot_radius(),
+#         t=0.1,
+#     )
+#     x = 0.5
+#     y = 0.5
+#     xl = label_offset[1]+x
+#     yl = label_offset[2]+y
+    
+#     Compose.compose(context(),
+#         (context(),
+#             Compose.text(xl, yl, label, hcenter, vcenter), 
+#             Compose.fill(text_color), 
+#             fontsize(label_scale*min(w,h))
+#             ),
+#         (context(),
+#             Compose.circle(x,y,r),
+#             fill(color), 
+#             # Compose.stroke(stroke_color),
+#             Compose.linewidth(t*w)
+#             ),
+#         )
+# end
+# function draw_object(;
+#     color=default_object_color(),
+#     r=default_object_radius(),
+#     kwargs...)
+#     draw_robot(;color=color,r=r,kwargs...)
+# end
+# function draw_goal(;
+#     color=default_goal_color(),
+#     r=default_goal_radius(),
+#     kwargs...)
+#     draw_tile(;color=color,r=r,kwargs...)
+# end
+
+"""
+    draw_entities(xs,rs;
+        draw_entity_function = v->draw_robot(label=v),
+        )
+
+xs is a vector of 2d positions
+rs is a vector of 2d canvas sizes 
+draw_entity_function is a custom function that renders each entity at its canvas
+    location.
+"""
+function draw_entities(xs;
+        keylist=[],
+        sizes=[(1.0,1.0)],
+        draw_entity_function = v->draw_entity(keylist;label=v),
+        kwargs...
+    )
+    entity_context(a,b,s) = context(
+        (a-s[1]/2),
+        (b-s[2]/2),
+        s[1],
+        s[2],
+        units=UnitBox(0.0,0.0,1.0,1.0),
+        )
+    entities = (
+        (entity_context(xs[v][1],xs[v][2],(get(sizes,v,sizes[1])...,)), 
+        draw_entity_function(v)) for v in 1:length(xs)
+    )
+    Compose.compose(context(),entities...)
+end
+draw_robots(xs;kwargs...) = draw_entities(xs;keylist=[:Robot],kwargs...)
+draw_objects(xs;kwargs...) = draw_entities(xs;keylist=[:Object],kwargs...)
+draw_tiles(xs;kwargs...) = draw_entities(xs;keylist=[:Vtx],kwargs...)
+draw_goals(xs;kwargs...) = draw_entities(xs;keylist=[:Goal],kwargs...)
+# function draw_robots(xs;
+#     radii=[default_robot_radius()],
+#     colors=[default_robot_color()],
+#     labels=1:length(xs),
+#     draw_func = v->draw_robot(
+#         r=get(radii,v,radii[1]),
+#         color=get(colors,v,colors[1]),
+#         label=labels[v]),
+#     kwargs...
+#     )
+#     draw_entities(xs;draw_entity_function=v->draw_func(v),kwargs...)
+# end
+# function draw_objects(xs;
+#     radii=[default_object_radius()],
+#     colors=[default_object_color()],
+#     kwargs...
+#     )
+#     draw_robots(xs;radii=radii,colors=colors,kwargs...)
+# end
+# function draw_tiles(xs;
+#         colors=[default_vtx_color()],
+#         labels=[],
+#         draw_func = v->draw_tile(;
+#             color=get(colors,v,colors[1]),
+#             label=get(labels,v,"")
+#         ),
+#         kwargs...
+#         )
+#     draw_entities(xs;draw_entity_function=draw_func,kwargs...)
+# end
+# function draw_goals(xs;
+#         colors=[default_goal_color()],
+#         labels=[],
+#         draw_func = v->draw_goal(;
+#             color=get(colors,v,colors[1]),
+#             label=get(labels,v,"")
+#         ),
+#         kwargs...
+#     )
+#     draw_entities(xs;draw_entity_function=draw_func,kwargs...)
+# end
 
 end
