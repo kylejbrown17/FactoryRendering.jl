@@ -58,6 +58,7 @@ set_render_param!(:TextColor,   "black")
 set_render_param!(:ShapeFunc,   (c,r)->Compose.circle(c[1],c[2],r))
 set_render_param!(:Radius,      0.45)
 set_render_param!(:LabelScale,  0.7)
+set_render_param!(:LabelShow,   true)
 set_render_param!(:Color,         :Robot,       RGB(0.1,0.5,0.9))
 set_render_param!(:Radius,        :Robot,       0.45)
 set_render_param!(:LabelScale,    :Robot,       0.7)
@@ -68,6 +69,7 @@ set_render_param!(:ShapeFunc,     :Vtx,         (c,r)->Compose.rectangle(c[1]-r,
 set_render_param!(:Color,         :Vtx,         colorant"LightGray")
 set_render_param!(:Radius,        :Vtx,         0.45)
 set_render_param!(:LabelScale,    :Vtx,         0.7)
+set_render_param!(:LabelShow,     :Vtx,         false)
 set_render_param!(:ShapeFunc,     :Goal,        (c,r)->Compose.rectangle(c[1]-r,c[2]-r,2*r,2*r))
 set_render_param!(:Color,         :Goal,        RGB(0.0,1.0,0.0))
 set_render_param!(:Radius,        :Goal,        0.35)
@@ -326,6 +328,7 @@ end
 function draw_entity(keylist=[];
         label="",
         label_offset=[0.0,0.0],
+        show_label=get_render_param(:ShowLabel,keylist...),
         color=get_render_param(:Color,keylist...),
         text_color=get_render_param(:TextColor,keylist...),
         label_scale=get_render_param(:LabelScale,keylist...),
@@ -338,6 +341,9 @@ function draw_entity(keylist=[];
     xl = label_offset[1]+x
     yl = label_offset[2]+y
     c = (x,y)
+    if show_label === nothing || show_label == false
+        label = ""
+    end
 
     Compose.compose(context(),
         (context(),
@@ -356,77 +362,6 @@ draw_tile(;kwargs...) = draw_entity([:Vtx];kwargs...)
 draw_robot(;kwargs...) = draw_entity([:Robot];kwargs...)
 draw_object(;kwargs...) = draw_entity([:Object];kwargs...)
 draw_goal(;kwargs...) = draw_entity([:Goal];kwargs...)
-# function draw_tile(;
-#         color=get_render_param(:Color,:Vtx;default=default_vtx_color()),
-#         label="",
-#         label_offset=[0.0,0.0],
-#         text_color=RGB(0.0,0.0,0.0),
-#         label_scale=get_render_param(:LabelScale,:Vtx;default=default_vtx_color()),
-#         r=0.45,
-#         t=0.5-r,
-#     )
-#     if t < 0
-#         @warn "t = $t. Should it be positive?"
-#     end
-#     x = 0.5
-#     y = 0.5
-#     xl = label_offset[1]+x
-#     yl = label_offset[2]+y
-
-#     Compose.compose(context(),
-#         (context(),
-#             Compose.text(xl, yl, label, hcenter, vcenter), 
-#             Compose.fill(text_color), 
-#             fontsize(label_scale*min(w,h))
-#             ),
-#         (context(),
-#             Compose.rectangle(t,t,1-2*t,1-2*t),
-#             fill(color), 
-#             Compose.linewidth(t*w)
-#             ),
-#         )
-# end
-# function draw_robot(;
-#         color=default_robot_color(),
-#         stroke_color=color,
-#         label="",
-#         label_offset=[0.0,0.0],
-#         text_color=RGB(0.0,0.0,0.0),
-#         label_scale=0.7,
-#         r=default_robot_radius(),
-#         t=0.1,
-#     )
-#     x = 0.5
-#     y = 0.5
-#     xl = label_offset[1]+x
-#     yl = label_offset[2]+y
-    
-#     Compose.compose(context(),
-#         (context(),
-#             Compose.text(xl, yl, label, hcenter, vcenter), 
-#             Compose.fill(text_color), 
-#             fontsize(label_scale*min(w,h))
-#             ),
-#         (context(),
-#             Compose.circle(x,y,r),
-#             fill(color), 
-#             # Compose.stroke(stroke_color),
-#             Compose.linewidth(t*w)
-#             ),
-#         )
-# end
-# function draw_object(;
-#     color=default_object_color(),
-#     r=default_object_radius(),
-#     kwargs...)
-#     draw_robot(;color=color,r=r,kwargs...)
-# end
-# function draw_goal(;
-#     color=default_goal_color(),
-#     r=default_goal_radius(),
-#     kwargs...)
-#     draw_tile(;color=color,r=r,kwargs...)
-# end
 
 """
     draw_entities(xs,rs;
@@ -441,7 +376,8 @@ draw_entity_function is a custom function that renders each entity at its canvas
 function draw_entities(xs;
         keylist=[],
         sizes=[(1.0,1.0)],
-        draw_entity_function = v->draw_entity(keylist;label=v),
+        labels=[],
+        draw_entity_function = v->draw_entity(keylist;label=get(labels,v,"")),
         kwargs...
     )
     entity_context(a,b,s) = context(
@@ -461,46 +397,5 @@ draw_robots(xs;kwargs...) = draw_entities(xs;keylist=[:Robot],kwargs...)
 draw_objects(xs;kwargs...) = draw_entities(xs;keylist=[:Object],kwargs...)
 draw_tiles(xs;kwargs...) = draw_entities(xs;keylist=[:Vtx],kwargs...)
 draw_goals(xs;kwargs...) = draw_entities(xs;keylist=[:Goal],kwargs...)
-# function draw_robots(xs;
-#     radii=[default_robot_radius()],
-#     colors=[default_robot_color()],
-#     labels=1:length(xs),
-#     draw_func = v->draw_robot(
-#         r=get(radii,v,radii[1]),
-#         color=get(colors,v,colors[1]),
-#         label=labels[v]),
-#     kwargs...
-#     )
-#     draw_entities(xs;draw_entity_function=v->draw_func(v),kwargs...)
-# end
-# function draw_objects(xs;
-#     radii=[default_object_radius()],
-#     colors=[default_object_color()],
-#     kwargs...
-#     )
-#     draw_robots(xs;radii=radii,colors=colors,kwargs...)
-# end
-# function draw_tiles(xs;
-#         colors=[default_vtx_color()],
-#         labels=[],
-#         draw_func = v->draw_tile(;
-#             color=get(colors,v,colors[1]),
-#             label=get(labels,v,"")
-#         ),
-#         kwargs...
-#         )
-#     draw_entities(xs;draw_entity_function=draw_func,kwargs...)
-# end
-# function draw_goals(xs;
-#         colors=[default_goal_color()],
-#         labels=[],
-#         draw_func = v->draw_goal(;
-#             color=get(colors,v,colors[1]),
-#             label=get(labels,v,"")
-#         ),
-#         kwargs...
-#     )
-#     draw_entities(xs;draw_entity_function=draw_func,kwargs...)
-# end
 
 end
