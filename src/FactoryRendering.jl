@@ -58,7 +58,7 @@ set_render_param!(:TextColor,   "black")
 set_render_param!(:ShapeFunc,   (c,r)->Compose.circle(c[1],c[2],r))
 set_render_param!(:Radius,      0.45)
 set_render_param!(:LabelScale,  0.7)
-set_render_param!(:LabelShow,   true)
+set_render_param!(:ShowLabel,   true)
 set_render_param!(:Color,         :Robot,       RGB(0.1,0.5,0.9))
 set_render_param!(:Radius,        :Robot,       0.45)
 set_render_param!(:LabelScale,    :Robot,       0.7)
@@ -69,7 +69,7 @@ set_render_param!(:ShapeFunc,     :Vtx,         (c,r)->Compose.rectangle(c[1]-r,
 set_render_param!(:Color,         :Vtx,         colorant"LightGray")
 set_render_param!(:Radius,        :Vtx,         0.45)
 set_render_param!(:LabelScale,    :Vtx,         0.7)
-set_render_param!(:LabelShow,     :Vtx,         false)
+set_render_param!(:ShowLabel,     :Vtx,         false)
 set_render_param!(:ShapeFunc,     :Goal,        (c,r)->Compose.rectangle(c[1]-r,c[2]-r,2*r,2*r))
 set_render_param!(:Color,         :Goal,        RGB(0.0,1.0,0.0))
 set_render_param!(:Radius,        :Goal,        0.35)
@@ -341,7 +341,7 @@ function draw_entity(keylist=[];
     xl = label_offset[1]+x
     yl = label_offset[2]+y
     c = (x,y)
-    if show_label === nothing || show_label == false
+    if show_label === nothing || show_label == false || label === nothing
         label = ""
     end
 
@@ -362,6 +362,47 @@ draw_tile(;kwargs...) = draw_entity([:Vtx];kwargs...)
 draw_robot(;kwargs...) = draw_entity([:Robot];kwargs...)
 draw_object(;kwargs...) = draw_entity([:Object];kwargs...)
 draw_goal(;kwargs...) = draw_entity([:Goal];kwargs...)
+
+# 1st order path
+function draw_path_segment(start,goal;
+        color=get_render_param(:Color,:Path,default="black"),
+        trel=get_render_param(:RelativeThickness,:Path,default=0.1),
+        t=get_render_param(:Thickness,:Path,default=nothing),
+    )
+    if t === nothing
+        t=trel*min(w,h)
+    end
+    Compose.compose(context(),
+        (context(), Compose.line([start,goal]), stroke(color), linewidth(t),),
+        (context(), Compose.circle(start..., t/2), 
+            Compose.circle(goal..., t/2), fill(color),)
+    )
+end
+
+function draw_path_segment(start,mid,goal;
+        color=get_render_param(:Color,:Path,default="black"),
+        trel=get_render_param(:RelativeThickness,:Path,default=0.1),
+        t=get_render_param(:Thickness,:Path,default=nothing),
+    )
+    if t === nothing
+        t=trel*min(w,h)
+    end
+    d1 = mid .- start
+    d2 = goal .- mid
+    x1 = (start .+ mid) ./ 2
+    x2 = (mid .+ goal) ./ 2
+    Compose.compose(context(),
+        (context(), Compose.line([x1,mid]), Compose.line([mid,x2]),
+            stroke(color), linewidth(t),
+        ),
+        (context(), Compose.circle(mid..., t/2), fill(color),)
+    )
+end
+function draw_path(vtxs;kwargs...)
+    Compose.compose(context(),
+        (draw_path_segment(v1,v2;kwargs...) for (v1,v2) in zip(vtxs,vtxs[2:end]))...
+        )
+end
 
 """
     draw_entities(xs,rs;
