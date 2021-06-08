@@ -122,12 +122,14 @@ abstract type RenderProjection end
 struct BirdsEyeProjection <: RenderProjection end
 struct OrthographicProjection <: RenderProjection
     theta::Float64 # yaw
-    azimuth::Float64 # roll
+    azimuth::Float64 # roll - π/2 is birds eye view
     lmap::LinearMap
 end
 function OrthographicProjection(theta,azimuth)
     tilt = LinearMap(SMatrix{2,3,Float64}(
-        1.0, 0.0, 0.0, sin(azimuth), 0.0, 0.0))
+        1.0, 0.0, 
+        0.0, sin(azimuth), 
+        0.0, cos(azimuth)))
     rot = LinearMap(RotZ(theta))
     OrthographicProjection(theta,azimuth,tilt ∘ rot)
 end
@@ -162,6 +164,10 @@ end
 
 (proj::OrthographicProjection)(c::Point3{Float64}) = proj.lmap(c)
 (proj::OrthographicProjection)(c::Point2{Float64}) = proj.lmap(Point(c[1],c[2],0.0))
+# (proj::OrthographicProjection)(c::NTuple{2,T}) where {T<:Real} = proj.lmap(Point(c[1],c[2],0.0)).data
+# (proj::OrthographicProjection)(c::NTuple{3,T}) where {T<:Real} = proj.lmap(Point(c[1],c[2],c[3])).data
+(proj::OrthographicProjection)(c::Tuple{A,B,C}) where {A<:Real,B<:Real,C<:Real} = proj.lmap(Point(c[1],c[2],c[3])).data
+(proj::OrthographicProjection)(c::Tuple{A,B}) where {A<:Real,B<:Real} = proj.lmap(Point(c[1],c[2],0.0)).data
 
 function (proj::OrthographicProjection)(c::Circle)
     AxisAlignedEllipse(
@@ -174,9 +180,11 @@ end
 function (proj::RenderProjection)(r::G) where {N,M,G<:GeometryBasics.Ngon{N,Float64,M,Point{N,Float64}}}
     GeometryBasics.Ngon(SVector{M,Point2{Float64}}(map(proj,r.points)...))
 end
-function (proj::OrthographicProjection)(v::Vector{Point{N,Float64}}) where {N}
-    map(proj,v)
+function (tform::Translation{V})(r::G) where {V,N,M,G<:GeometryBasics.Ngon{N,Float64,M,Point{N,Float64}}}
+    GeometryBasics.Ngon(SVector{M,Point2{Float64}}(map(tform,r.points)...))
 end
+(proj::OrthographicProjection)(v::Vector{Point{N,Float64}}) where {N} = map(proj,v)
+(proj::OrthographicProjection)(v::Vector{T}) where {T<:Tuple} = map(proj,v)
 function (proj::OrthographicProjection)(r::Rect2D)
     pts = map(Point2,collect(coordinates(r)))
     proj(GeometryBasics.Ngon(SVector(pts[1],pts[2],pts[4],pts[3])))
@@ -330,6 +338,7 @@ function draw_entity(keylist=[];
         label_offset=[0.0,0.0],
         show_label=get_render_param(:ShowLabel,keylist...),
         color=get_render_param(:Color,keylist...),
+        border_color=nothing,
         text_color=get_render_param(:TextColor,keylist...),
         label_scale=get_render_param(:LabelScale,keylist...),
         r=get_render_param(:Radius,keylist...),
@@ -354,7 +363,8 @@ function draw_entity(keylist=[];
         (context(),
             shape_func(c,r),
             fill(color), 
-            Compose.linewidth(t*w)
+            Compose.stroke(border_color), 
+            Compose.linewidth(t*w),
             ),
         )
 end
@@ -383,6 +393,7 @@ function draw_path_segment(start,mid,goal;
         color=get_render_param(:Color,:Path,default="black"),
         trel=get_render_param(:RelativeThickness,:Path,default=0.1),
         t=get_render_param(:Thickness,:Path,default=nothing),
+        fillet_radius=get_render_param(:FilletRadius,:Path,default=0.0),
     )
     if t === nothing
         t=trel*min(w,h)
@@ -391,6 +402,10 @@ function draw_path_segment(start,mid,goal;
     d2 = goal .- mid
     x1 = (start .+ mid) ./ 2
     x2 = (mid .+ goal) ./ 2
+    if fillet_radius > 0 && abs(atan(d1...)-atan(d2...)) >= 1e-3
+        v = mid .- (goal .+ start) ./ 2
+        c = mid .- fillet_radius*normalize([v...])
+    end
     Compose.compose(context(),
         (context(), Compose.line([x1,mid]), Compose.line([mid,x2]),
             stroke(color), linewidth(t),
